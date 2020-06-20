@@ -22,6 +22,12 @@ func GracefullShutdown(ctx *fasthttp.RequestCtx, quit chan<- os.Signal) {
 
 }
 
+func IndexStats(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
+	ctx.SetStatusCode(200)
+	ctx.WriteString(index.Hnsw.Stats())
+
+}
+
 func ShutDown(ctx *fasthttp.RequestCtx, shutdown chan<- os.Signal) {
 	ctx.SetStatusCode(200)
 	ctx.WriteString("Server Shutdown")
@@ -47,7 +53,30 @@ func KNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 		stringLabels[i] = string(lab)
 	}
 
-	resp := searchResponse{Labels: labels, Dists: distances}
+	resp := searchResponse{Labels: stringLabels, Dists: distances}
+	jsonBody, err := json.Marshal(resp)
+	if err != nil {
+		ctx.Error("Json Marhsall error", 500)
+	}
+	ctx.SetContentType("application/json; charset=utf-8")
+	ctx.SetStatusCode(200)
+	ctx.Response.SetBody(jsonBody)
+	return
+
+}
+
+func Benchmark(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
+	var sp searchPayload
+	err := json.Unmarshal(ctx.PostBody(), &sp)
+	if err != nil {
+		ctx.Error("Search Json payload error", 500)
+		// return failure to decode
+		return
+	}
+
+	precision := index.Hnsw.Benchmark(sp.Query, sp.EfSearch, sp.K)
+
+	resp := benchResponse{Precision: precision}
 	jsonBody, err := json.Marshal(resp)
 	if err != nil {
 		ctx.Error("Json Marhsall error", 500)
@@ -88,6 +117,10 @@ type searchPayload struct {
 }
 
 type searchResponse struct {
-	Labels [][]byte  `json:"labels"`
+	Labels []string  `json:"labels"`
 	Dists  []float32 `json:"distances"`
+}
+
+type benchResponse struct {
+	Precision float64 `json:"precision"`
 }

@@ -65,6 +65,8 @@ func main() {
 		newindex.Hnsw.Grow(MAX_ELEMENTS)
 	}
 
+	logger.Println(newindex.Hnsw.Stats())
+
 	myIP, err := network.GetOutboundIP()
 	if err != nil {
 		logger.Println("Couldn't determine hostname, starting on loopback 127.0.0.1")
@@ -82,6 +84,12 @@ func main() {
 	})
 	myserver.Router.POST("/hnsw/api/v1/insert", func(ctx *fasthttp.RequestCtx) {
 		handler.Insert(ctx, newindex)
+	})
+	myserver.Router.GET("/hnsw/api/v1/stats", func(ctx *fasthttp.RequestCtx) {
+		handler.IndexStats(ctx, newindex)
+	})
+	myserver.Router.POST("/hnsw/api/v1/benchmark", func(ctx *fasthttp.RequestCtx) {
+		handler.Benchmark(ctx, newindex)
 	})
 
 	myserver.Start()
