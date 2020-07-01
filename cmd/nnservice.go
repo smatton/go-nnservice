@@ -7,11 +7,17 @@ import (
 	"runtime"
 	"strconv"
 
+	//"github.com/pkg/profile"
+
+	"net/http"
+	_ "net/http/pprof"
+
 	"github.com/smatton/go-nnservice/pkg/neighbors"
 	"github.com/smatton/go-nnservice/pkg/network"
 	"github.com/smatton/go-nnservice/pkg/server"
 	"github.com/smatton/go-nnservice/pkg/server/http/handler"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/pprofhandler"
 )
 
 var (
@@ -22,6 +28,7 @@ var (
 func main() {
 
 	flag.StringVar(&PORT, "port", "9023", "port to start registry on")
+
 	flag.Parse()
 	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
 
@@ -77,7 +84,7 @@ func main() {
 	runtime.GOMAXPROCS(nthreads)
 
 	myserver := server.New(myIP + ":" + PORT)
-
+	//var upgrader = websocket.FastHTTPUpgrader{}
 	// Add custom routes
 	myserver.Router.POST("/hnsw/api/v1/search", func(ctx *fasthttp.RequestCtx) {
 		handler.KNNSearch(ctx, newindex)
@@ -91,6 +98,16 @@ func main() {
 	myserver.Router.POST("/hnsw/api/v1/benchmark", func(ctx *fasthttp.RequestCtx) {
 		handler.Benchmark(ctx, newindex)
 	})
+	myserver.Router.ANY("/ws/hnsw/api/v1/search", func(ctx *fasthttp.RequestCtx) {
+		handler.WsKNNSearch(ctx, newindex)
+	})
 
+	// PROFILER HANDLES
+	myserver.Router.GET("/debug/pprof", pprofhandler.PprofHandler)
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
+	// Start server
 	myserver.Start()
 }
