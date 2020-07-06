@@ -127,7 +127,7 @@ func (index *Index) savelabelDict(filename string) error {
 	fz := gzip.NewWriter(f)
 	defer fz.Close()
 
-	labels := LabelDict{LabelDict: index.labelDict, CurrentIndex: index.currentIndex}
+	labels := LabelDict{LabelDict: index.labelDict, CurrentIndex: index.currentIndex, Normalized: index.Normalized}
 	e := gob.NewEncoder(fz)
 	err = e.Encode(labels)
 	if err != nil {
@@ -159,6 +159,7 @@ func (index *Index) loadLabelDict(filename string) error {
 
 	index.labelDict = labels.LabelDict
 	index.currentIndex = labels.CurrentIndex
+	index.Normalized = labels.Normalized
 
 	return nil
 }
@@ -202,6 +203,7 @@ func randomPoint(dim int) hnsw.Point {
 
 type LabelDict struct {
 	CurrentIndex uint32
+	Normalized   bool
 	LabelDict    map[uint32][]byte
 }
 
