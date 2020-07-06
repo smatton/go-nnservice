@@ -5,6 +5,7 @@ package neighbors
 import (
 	"compress/gzip"
 	"encoding/gob"
+	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -19,9 +20,10 @@ type Index struct {
 	currentIndex uint32
 	labelDict    map[uint32][]byte
 	efSearch     int
+	Normalized   bool
 }
 
-func NewIndex(M, efConstruction, max_elements, dim int) *Index {
+func NewIndex(M, efConstruction, max_elements, dim int, normalize bool) *Index {
 	var Ind Index
 
 	zero := randomPoint(dim)
@@ -29,6 +31,7 @@ func NewIndex(M, efConstruction, max_elements, dim int) *Index {
 	Ind.Hnsw = hnsw.New(M, efConstruction, zero)
 	Ind.Hnsw.Grow(max_elements)
 	Ind.labelDict = make(map[uint32][]byte)
+	Ind.Normalized = normalize
 
 	return &Ind
 
@@ -68,7 +71,12 @@ func (index *Index) Load(filename string) error {
 //Add overload the add operation to support string labels
 func (index *Index) Insert(point []float32, label []byte) {
 	var pt hnsw.Point
-	pt = point
+
+	if index.Normalized {
+		pt = Normalize(point)
+	} else {
+		pt = point
+	}
 
 	atomic.AddUint32(&index.currentIndex, 1)
 
@@ -88,7 +96,12 @@ func (index *Index) Grow(size int) {
 
 func (index *Index) Search(point []float32, K int) ([][]byte, []float32) {
 	var pt hnsw.Point
-	pt = point
+	if index.Normalized {
+		pt = Normalize(point)
+	} else {
+		pt = point
+	}
+
 	label := make([][]byte, K)
 	distances := make([]float32, K)
 
@@ -190,4 +203,28 @@ func randomPoint(dim int) hnsw.Point {
 type LabelDict struct {
 	CurrentIndex uint32
 	LabelDict    map[uint32][]byte
+}
+
+//Normalized return unit vector for the float slice passed
+//by using unit vector points the euclidean distance will be proportional to
+// the cosine distance of the two vectors
+func Normalize(pt []float32) []float32 {
+	normalized := make([]float32, len(pt))
+
+	mag := float32(Magnitude(pt))
+
+	for i, v := range pt {
+		normalized[i] = v / mag
+	}
+
+	return normalized
+}
+
+func Magnitude(pt []float32) float64 {
+	var sum float32
+	for _, v := range pt {
+		sum += v * v
+	}
+
+	return math.Sqrt(float64(sum))
 }
