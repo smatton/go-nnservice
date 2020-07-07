@@ -57,7 +57,7 @@ func (index *Index) Load(filename string) error {
 	newindex, _, err := hnsw.Load(filename)
 	index.Hnsw = newindex
 	if err != nil {
-		return nil
+		return err
 	}
 
 	labeldictname := filename + ".labs.gz"

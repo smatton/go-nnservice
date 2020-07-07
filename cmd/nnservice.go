@@ -38,7 +38,7 @@ func main() {
 	HNSWLIB_MAX_ELEMENTS := os.Getenv("HNSWLIB_MAX_ELEMENTS")
 	HNSWLIB_M := os.Getenv("HNSWLIB_M")
 	HNSWLIB_EF_CONSTRUCTION := os.Getenv("HNSWLIB_EF_CONSTRUCTION")
-
+	HNSWLIB_NORMALIZED := os.Getenv("HNSWLIB_NORMALIZED")
 	nthreads := 4
 	if NTHREADS != "" {
 		nthreads, _ = strconv.Atoi(NTHREADS)
@@ -65,8 +65,12 @@ func main() {
 	if HNSWLIB_EF_CONSTRUCTION != "" {
 		HNSWLIB_EFC, _ = strconv.Atoi(HNSWLIB_EF_CONSTRUCTION)
 	}
+	normalizedPoints := false
+	if HNSWLIB_NORMALIZED != "" {
+		normalizedPoints = true
+	}
 
-	newindex := neighbors.NewIndex(M, HNSWLIB_EFC, MAX_ELEMENTS, DIMS)
+	newindex := neighbors.NewIndex(M, HNSWLIB_EFC, MAX_ELEMENTS, DIMS, normalizedPoints)
 	if INDEX_FILE != "" {
 		newindex.Load(INDEX_FILE)
 		newindex.Hnsw.Grow(MAX_ELEMENTS)
