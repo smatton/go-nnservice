@@ -2,9 +2,9 @@ package handler
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"encoding/json"
 
@@ -75,7 +75,7 @@ func KNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 	dist = distances
 
 	resp := searchResponse{Labels: stringLabels, Dists: &dist}
-
+	fmt.Println(stringLabels, dist)
 	jsonBody, err := json.Marshal(resp)
 	if err != nil {
 		ctx.Error("Json Marhsall error", 500)
@@ -83,6 +83,7 @@ func KNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 
 	ctx.SetContentType("application/json; charset=utf-8")
 	ctx.SetStatusCode(200)
+
 	ctx.Response.SetBody(jsonBody)
 	return
 
@@ -152,10 +153,7 @@ func WsKNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 			var dist point
 			dist = distances
 			resp := searchResponse{Labels: stringLabels, Dists: &dist}
-			b := strings.Builder{}
-			enc := gojay.BorrowEncoder(&b)
-			defer enc.Release()
-			err = enc.Encode(resp)
+
 			jsonBody, err := json.Marshal(resp)
 			if err != nil {
 				log.Println("write:", err)
