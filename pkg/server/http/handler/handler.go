@@ -2,11 +2,11 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
-
-	"encoding/json"
+	"path/filepath"
 
 	"github.com/fasthttp/websocket"
 	"github.com/francoispqt/gojay"
@@ -39,6 +39,7 @@ func IndexStats(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 
 }
 
+// ShutDown provides an endpoint to shutdown the server
 func ShutDown(ctx *fasthttp.RequestCtx, shutdown chan<- os.Signal) {
 	ctx.SetStatusCode(200)
 	ctx.WriteString("Server Shutdown")
@@ -46,11 +47,53 @@ func ShutDown(ctx *fasthttp.RequestCtx, shutdown chan<- os.Signal) {
 
 }
 
+// KNNSave calls the save method on the index attempting to save the index to file
+// specified in the json request
+func KNNSave(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
+	var sp savePayload
+	var rp saveResponse
+
+	err := json.Unmarshal(ctx.PostBody(), &sp)
+	if err != nil {
+		ctx.Error("Save Json payload error", 500)
+		// return failure to decode
+		return
+	}
+
+	if sp.FileName == "" || sp.FileName == "/" {
+		ctx.Error("file_name must be specified", 500)
+		return
+	}
+
+	err = index.Save(sp.FileName)
+	if err != nil {
+		rp.Error = err.Error()
+	} else {
+		wd, _ := os.Getwd()
+
+		rp.Message = fmt.Sprintf("Succesfully saved file to: %s", filepath.Join(wd, sp.FileName))
+	}
+
+	jsonBody, err := json.Marshal(rp)
+	if err != nil {
+		ctx.Error("Json Marhsall error", 500)
+	}
+
+	ctx.SetContentType("application/json; charset=utf-8")
+	ctx.SetStatusCode(200)
+
+	ctx.Response.SetBody(jsonBody)
+	return
+}
+
 //KNNSearch handles POST request containing a json body. The client specifies
 // number of neighbors "k", "efSearch" which controls the precision and a "query"
 // point. Searching can be safely done conncurrently even while inserting.
 func KNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
+
 	var sp searchPayload
+	var dist point
+	var b bytes.Buffer
 
 	dec := gojay.BorrowDecoder(bytes.NewReader(ctx.PostBody()))
 	defer dec.Release()
@@ -70,21 +113,30 @@ func KNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 	for i, lab := range labels {
 		stringLabels[i] = string(lab)
 	}
+	//fmt.Println(distances)
 
-	var dist point
 	dist = distances
 
 	resp := searchResponse{Labels: stringLabels, Dists: &dist}
-	fmt.Println(stringLabels, dist)
-	jsonBody, err := json.Marshal(resp)
+
+	enc := gojay.BorrowEncoder(&b)
+	err = enc.Encode(resp)
+	defer enc.Release()
+	//b, err := gojay.MarshalJSONObject(resp)
 	if err != nil {
-		ctx.Error("Json Marhsall error", 500)
+		ctx.Error("Response Json payload marshal error", 500)
 	}
+
+	//jsonBody, err := json.Marshal(resp)
+	//if err != nil {
+	//	ctx.Error("Json Marhsall error", 500)
+	//}
 
 	ctx.SetContentType("application/json; charset=utf-8")
 	ctx.SetStatusCode(200)
 
-	ctx.Response.SetBody(jsonBody)
+	//ctx.Response.SetBody(jsonBody)
+	ctx.Response.SetBody(b.Bytes())
 	return
 
 }
@@ -120,6 +172,12 @@ func Benchmark(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 // consecutive knn searches.
 func WsKNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 	var sp searchPayload
+	var resp searchResponse
+	// Pre-allocate the slice to be large
+	MaxLabels := 100
+	stringLabels := make([]string, MaxLabels)
+	var dist point
+	var b bytes.Buffer
 
 	err := upgrader.Upgrade(ctx, func(ws *websocket.Conn) {
 		defer ws.Close()
@@ -131,9 +189,10 @@ func WsKNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 			}
 
 			dec := gojay.BorrowDecoder(bytes.NewReader(message))
-			defer dec.Release()
+
 			//err := json.Unmarshal(ctx.PostBody(), &sp)
 			err = dec.Decode(&sp)
+			dec.Release()
 			if err != nil {
 				ctx.Error("Search Json payload error", 500)
 				// return failure to decode
@@ -144,22 +203,36 @@ func WsKNNSearch(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 				index.SetEf(sp.EfSearch)
 			}
 
-			stringLabels := make([]string, sp.K)
+			stringLabels = stringLabels[:0]
+
 			labels, distances := index.Search(*sp.Query, sp.K)
-			for i, lab := range labels {
-				stringLabels[i] = string(lab)
+			for _, lab := range labels {
+				stringLabels = append(stringLabels, string(lab))
 			}
 
-			var dist point
 			dist = distances
-			resp := searchResponse{Labels: stringLabels, Dists: &dist}
+			resp.Labels = stringLabels
+			resp.Dists = &dist
 
-			jsonBody, err := json.Marshal(resp)
+			b.Reset()
+
+			enc := gojay.BorrowEncoder(&b)
+			err = enc.Encode(resp)
+			enc.Release()
 			if err != nil {
-				log.Println("write:", err)
-				break
+				log.Println("Websocket Error:", err.Error())
+				log.Printf("Searched: %v, returned labels %v, distances %v", *sp.Query, stringLabels, dist)
+				continue
 			}
-			err = ws.WriteMessage(mt, jsonBody)
+			// jsonBody, err := json.Marshal(resp)
+			// if err != nil {
+
+			// 	log.Println("write:", err)
+			// 	log.Printf("Searched: %v, returned labels %v, distances %v", *sp.Query, stringLabels, dist)
+			// 	break
+			// }
+			//fmt.Println(jsonBody)
+			err = ws.WriteMessage(mt, b.Bytes())
 		}
 	})
 
@@ -190,6 +263,15 @@ func Insert(ctx *fasthttp.RequestCtx, index *neighbors.Index) {
 
 }
 
+type saveResponse struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+}
+
+type savePayload struct {
+	FileName string `json:"file_name"`
+}
+
 type insertPayload struct {
 	Point *point `json:"point"`
 	Label string `json:"label"`
@@ -213,13 +295,13 @@ type benchResponse struct {
 // The following are necessary to implement the gojay decoder interface for
 // pooled decoder
 
-func (sr *searchResponse) MarshalJSONObject(dec *gojay.Encoder) {
-	dec.AddSliceStringKey("labels", sr.Labels)
-	dec.ArrayKey("distances", sr.Dists)
+func (sr searchResponse) MarshalJSONObject(enc *gojay.Encoder) {
+	enc.SliceStringKey("labels", sr.Labels)
+	enc.ArrayKey("distances", sr.Dists)
 }
 
-func (sr *searchResponse) IsNil() bool {
-	return sr == nil
+func (sr searchResponse) IsNil() bool {
+	return &sr == nil
 }
 
 func (sp *searchPayload) UnmarshalJSONObject(dec *gojay.Decoder, key string) error {

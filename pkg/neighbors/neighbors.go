@@ -5,6 +5,7 @@ package neighbors
 import (
 	"compress/gzip"
 	"encoding/gob"
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
@@ -161,6 +162,8 @@ func (index *Index) loadLabelDict(filename string) error {
 	index.currentIndex = labels.CurrentIndex
 	index.Normalized = labels.Normalized
 
+	fmt.Printf("index %v", index.Normalized)
+
 	return nil
 }
 
@@ -213,20 +216,28 @@ type LabelDict struct {
 func Normalize(pt []float32) []float32 {
 	normalized := make([]float32, len(pt))
 
-	mag := float32(Magnitude(pt))
+	mag := Magnitude(pt)
 
 	for i, v := range pt {
 		normalized[i] = v / mag
+
 	}
 
 	return normalized
 }
 
-func Magnitude(pt []float32) float64 {
-	var sum float32
-	for _, v := range pt {
-		sum += v * v
+func Magnitude(pt []float32) float32 {
+
+	return float32(math.Sqrt(float64(Dot(pt, pt))))
+}
+
+func Dot(a, b []float32) float32 {
+	// not checking if they are equal length
+	// just assume b is atleast as long as a
+	var dotproduct float32
+	for i, v := range a {
+		dotproduct += v * b[i]
 	}
 
-	return math.Sqrt(float64(sum))
+	return dotproduct
 }
